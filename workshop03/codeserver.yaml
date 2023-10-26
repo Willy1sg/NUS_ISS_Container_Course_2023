@@ -1,0 +1,138 @@
+---
+#create namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: codeserver-ns
+  labels:
+    app: codeserver
+
+---
+#create configmap for other parameter
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: codeserver-cm
+  namespace: codeserver-ns
+  labels:
+    app: codeserver
+    name: codeserver-cm
+data:
+  TZ: Asia/Singapore
+  DEFAULT_WORKSPACE: /config/workspace
+  PROXY_DOMAIN: code-server.146.190.99.197.nip.io
+
+---
+#create sercet for password
+apiVersion: v1
+kind: Secret
+metadata:
+  name: codeserver-secret
+  namespace: codeserver-ns
+  labels:
+    app: codeserver
+type: Opaque
+data:
+  PASSWORD: cGFzc3dvcmQ=
+  SUDO_PASSWORD: cGFzc3dvcmQ=
+
+---
+#create pvc
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: codeserver-pvc
+  namespace: codeserver-ns
+spec:
+  storageClassName: do-block-storage
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  
+
+
+---
+#create deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: codeserver-deploy
+  namespace: codeserver-ns
+  labels:
+    app: codeserver
+    name: codeserver-deploy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: codeserver
+      name: codeserver-po
+  template:
+    metadata:
+      name: codeserver-po
+      labels:
+        app: codeserver
+        name: codeserver-po
+    spec:
+      volumes:
+      - name: codeserver-vol
+        persistentVolumeClaim:
+          claimName: codeserver-pvc
+      containers:
+      - name: codeserver-container
+        image: linuxserver/code-server:4.18.0
+        envFrom:
+        - configMapRef:
+            name: codeserver-cm
+        - secretRef:
+            name: codeserver-secret
+        ports:
+        - containerPort: 8443
+        volumeMounts:
+        - name: codeserver-vol
+          mountPath: /config/workspace
+
+---
+#create Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: codeserver-svc
+  namespace: codeserver-ns
+  labels:
+    app: codeserver
+    name: codeserver-svc
+spec:
+  type: ClusterIP
+  selector:
+    app: codeserver
+    name: codeserver-po
+  ports:
+  - port: 8443
+    targetPort: 8443
+
+---
+#create ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: codeserver-ing
+  namespace: codeserver-ns
+  labels: 
+    app: codeserver
+    name: codeserver-ing
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: code-server.146.190.99.197.nip.io
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: codeserver-svc
+            port:
+              number: 8443
